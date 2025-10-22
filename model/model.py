@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.hub import load_state_dict_from_url
-from torchvision.models.resnet import model_urls
+from torchvision.models.resnet import ResNet50_Weights, ResNet18_Weights
 from torch.nn.parameter import Parameter
 
 from functools import partial
@@ -19,9 +19,9 @@ def replace_layer(module):
         if isinstance(layer, nn.Linear):
             in_features = layer.in_features
             out_features = layer.out_features
-            bias = layer.bias is not None 
+            bias = layer.bias is not None
             setattr(module, name, Linear_fw(in_features, out_features, bias=bias))
-        
+
         elif isinstance(layer, nn.Conv2d):
             in_channels = layer.in_channels
             out_channels = layer.out_channels
@@ -29,47 +29,76 @@ def replace_layer(module):
             stride = layer.stride
             padding = layer.padding
             bias = layer.bias is not None
-            setattr(module, name, Conv2d_fw(in_channels, out_channels, kernel_size, 
-                                            stride=stride, padding=padding, bias=bias))
-        
+            setattr(
+                module,
+                name,
+                Conv2d_fw(
+                    in_channels,
+                    out_channels,
+                    kernel_size,
+                    stride=stride,
+                    padding=padding,
+                    bias=bias,
+                ),
+            )
+
         elif isinstance(layer, nn.BatchNorm2d):
             num_features = layer.num_features
             eps = layer.eps
             momentum = layer.momentum
             affine = layer.affine
             track_running_stats = layer.track_running_stats
-            setattr(module, name, BatchNorm2d_fw(num_features, eps=eps, momentum=momentum, 
-                                                 affine=affine, track_running_stats=track_running_stats))
-        
+            setattr(
+                module,
+                name,
+                BatchNorm2d_fw(
+                    num_features,
+                    eps=eps,
+                    momentum=momentum,
+                    affine=affine,
+                    track_running_stats=track_running_stats,
+                ),
+            )
+
         elif isinstance(layer, nn.LayerNorm):
             normalized_shape = layer.normalized_shape
             eps = layer.eps
             elementwise_affine = layer.elementwise_affine
-            setattr(module, name, LayerNorm_fw(normalized_shape, eps=eps, 
-                                               elementwise_affine=elementwise_affine))
-        
+            setattr(
+                module,
+                name,
+                LayerNorm_fw(normalized_shape, eps=eps, elementwise_affine=elementwise_affine),
+            )
+
         else:
             replace_layer(layer)
 
 
 class Linear_fw(nn.Linear):
     def __init__(self, in_features, out_features, bias=True):
-        super(Linear_fw, self).__init__(in_features=in_features, out_features=out_features, bias=bias)
+        super(Linear_fw, self).__init__(
+            in_features=in_features, out_features=out_features, bias=bias
+        )
 
     def forward(self, x):
-        weight = self.weight if self.weight is None or self.weight.fast is None else self.weight.fast
+        weight = (
+            self.weight if self.weight is None or self.weight.fast is None else self.weight.fast
+        )
         bias = self.bias if self.bias is None or self.bias.fast is None else self.bias.fast
-       
+
         return F.linear(x, weight, bias)
-        
+
 
 class Conv2d_fw(nn.Conv2d):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, bias=True):
-        super(Conv2d_fw, self).__init__(in_channels, out_channels, kernel_size, stride=stride, padding=padding,
-                                        bias=bias)
+        super(Conv2d_fw, self).__init__(
+            in_channels, out_channels, kernel_size, stride=stride, padding=padding, bias=bias
+        )
 
     def forward(self, x):
-        weight = self.weight if self.weight is None or self.weight.fast is None else self.weight.fast
+        weight = (
+            self.weight if self.weight is None or self.weight.fast is None else self.weight.fast
+        )
         bias = self.bias if self.bias is None or self.bias.fast is None else self.bias.fast
 
         return F.conv2d(x, weight, bias, stride=self.stride, padding=self.padding)
@@ -77,8 +106,13 @@ class Conv2d_fw(nn.Conv2d):
 
 class BatchNorm2d_fw(nn.BatchNorm2d):
     def __init__(self, num_features, eps=1e-5, momentum=0.1, affine=True, track_running_stats=True):
-        super(BatchNorm2d_fw, self).__init__(num_features=num_features, eps=eps, momentum=momentum, 
-                                                 affine=affine, track_running_stats=track_running_stats)
+        super(BatchNorm2d_fw, self).__init__(
+            num_features=num_features,
+            eps=eps,
+            momentum=momentum,
+            affine=affine,
+            track_running_stats=track_running_stats,
+        )
 
     def forward(self, input):
         self._check_input_dim(input)
@@ -101,24 +135,35 @@ class BatchNorm2d_fw(nn.BatchNorm2d):
         else:
             bn_training = (self.running_mean is None) and (self.running_var is None)
 
-        weight = self.weight if self.weight is None or self.weight.fast is None else self.weight.fast
+        weight = (
+            self.weight if self.weight is None or self.weight.fast is None else self.weight.fast
+        )
         bias = self.bias if self.bias is None or self.bias.fast is None else self.bias.fast
 
         return F.batch_norm(
             input,
             self.running_mean if not self.training or self.track_running_stats else None,
             self.running_var if not self.training or self.track_running_stats else None,
-            weight, bias, bn_training, exponential_average_factor, self.eps)
+            weight,
+            bias,
+            bn_training,
+            exponential_average_factor,
+            self.eps,
+        )
 
 
 class LayerNorm_fw(nn.LayerNorm):
     def __init__(self, normalized_shape, eps=1e-5, elementwise_affine=True):
-        super(LayerNorm_fw, self).__init__(normalized_shape, eps, elementwise_affine=elementwise_affine)
+        super(LayerNorm_fw, self).__init__(
+            normalized_shape, eps, elementwise_affine=elementwise_affine
+        )
 
     def forward(self, input):
-        weight = self.weight if self.weight is None or self.weight.fast is None else self.weight.fast
+        weight = (
+            self.weight if self.weight is None or self.weight.fast is None else self.weight.fast
+        )
         bias = self.bias if self.bias is None or self.bias.fast is None else self.bias.fast
-        
+
         return F.layer_norm(input, self.normalized_shape, weight, bias, self.eps)
 
 
@@ -127,12 +172,19 @@ class BasicBlock(nn.Module):
 
     def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(BasicBlock, self).__init__()
-        self.conv1 = Conv2d_fw(in_channels=inplanes, out_channels=planes, kernel_size=3,
-                               stride=stride, padding=1, bias=False)
+        self.conv1 = Conv2d_fw(
+            in_channels=inplanes,
+            out_channels=planes,
+            kernel_size=3,
+            stride=stride,
+            padding=1,
+            bias=False,
+        )
         self.bn1 = BatchNorm2d_fw(planes)
         self.relu = nn.ReLU(inplace=True)
-        self.conv2 = Conv2d_fw(in_channels=planes, out_channels=planes, kernel_size=3,
-                               stride=1, padding=1, bias=False)
+        self.conv2 = Conv2d_fw(
+            in_channels=planes, out_channels=planes, kernel_size=3, stride=1, padding=1, bias=False
+        )
         self.bn2 = BatchNorm2d_fw(planes)
         self.downsample = downsample
         self.stride = stride
@@ -167,13 +219,28 @@ class Bottleneck(nn.Module):
         downsample=None,
     ):
         super(Bottleneck, self).__init__()
-        self.conv1 = Conv2d_fw(in_channels=inplanes, out_channels=planes, kernel_size=1, stride=1, bias=False)
+        self.conv1 = Conv2d_fw(
+            in_channels=inplanes, out_channels=planes, kernel_size=1, stride=1, bias=False
+        )
         self.bn1 = BatchNorm2d_fw(planes)
         self.relu = nn.ReLU(inplace=True)
-        self.conv2 = Conv2d_fw(in_channels=planes, out_channels=planes, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.conv2 = Conv2d_fw(
+            in_channels=planes,
+            out_channels=planes,
+            kernel_size=3,
+            stride=stride,
+            padding=1,
+            bias=False,
+        )
         self.bn2 = BatchNorm2d_fw(planes)
-        self.conv3 = Conv2d_fw(in_channels=planes, out_channels=planes*self.expansion, kernel_size=1, stride=1, bias=False)
-        self.bn3 = BatchNorm2d_fw(planes*self.expansion)
+        self.conv3 = Conv2d_fw(
+            in_channels=planes,
+            out_channels=planes * self.expansion,
+            kernel_size=1,
+            stride=1,
+            bias=False,
+        )
+        self.bn3 = BatchNorm2d_fw(planes * self.expansion)
         self.downsample = downsample
         self.stride = stride
 
@@ -204,8 +271,7 @@ class ResNetFast(nn.Module):
     def __init__(self, block, layers):
         self.inplanes = 64
         super(ResNetFast, self).__init__()
-        self.conv1 = Conv2d_fw(3, 64, kernel_size=7, stride=2, padding=3,
-                               bias=False)
+        self.conv1 = Conv2d_fw(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
         self.bn1 = BatchNorm2d_fw(64)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
@@ -219,7 +285,7 @@ class ResNetFast(nn.Module):
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
             elif isinstance(m, nn.BatchNorm2d):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
@@ -228,8 +294,13 @@ class ResNetFast(nn.Module):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
-                Conv2d_fw(self.inplanes, planes * block.expansion,
-                          kernel_size=1, stride=stride, bias=False),
+                Conv2d_fw(
+                    self.inplanes,
+                    planes * block.expansion,
+                    kernel_size=1,
+                    stride=stride,
+                    bias=False,
+                ),
                 BatchNorm2d_fw(planes * block.expansion),
             )
 
@@ -272,16 +343,14 @@ class ConvNet(nn.Module):
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
             elif isinstance(m, nn.BatchNorm2d):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
 
     def _check_input(self, x):
         H, W = x.shape[2:]
-        assert (
-            H == 32 and W == 32
-        ), "Input to network must be 32x32, " "but got {}x{}".format(H, W)
+        assert H == 32 and W == 32, "Input to network must be 32x32, but got {}x{}".format(H, W)
 
     def forward(self, x):
         self._check_input(x)
@@ -312,12 +381,11 @@ class MutiClassifier(nn.Module):
         self.net = net
         self.num_classes = num_classes
         self.classifier = Linear_fw(feature_dim, self.num_classes)
-        self.b_classifier = Linear_fw(feature_dim, self.num_classes*2)
-        nn.init.xavier_uniform_(self.classifier.weight, .1)
-        nn.init.constant_(self.classifier.bias, 0.)
-        nn.init.xavier_uniform_(self.b_classifier.weight, .1)
-        nn.init.constant_(self.b_classifier.bias, 0.)
-
+        self.b_classifier = Linear_fw(feature_dim, self.num_classes * 2)
+        nn.init.xavier_uniform_(self.classifier.weight, 0.1)
+        nn.init.constant_(self.classifier.bias, 0.0)
+        nn.init.xavier_uniform_(self.b_classifier.weight, 0.1)
+        nn.init.constant_(self.b_classifier.bias, 0.0)
 
     def forward(self, x):
         x = self.net(x)
@@ -341,16 +409,16 @@ class MutiClassifier_(nn.Module):
         super(MutiClassifier_, self).__init__()
         self.net = net
         self.num_classes = num_classes
-        self.b_classifier = Linear_fw(feature_dim, self.num_classes*2)
-        nn.init.xavier_uniform_(self.b_classifier.weight, .1)
-        nn.init.constant_(self.b_classifier.bias, 0.)
+        self.b_classifier = Linear_fw(feature_dim, self.num_classes * 2)
+        nn.init.xavier_uniform_(self.b_classifier.weight, 0.1)
+        nn.init.constant_(self.b_classifier.bias, 0.0)
 
     def forward(self, x):
         x = self.net(x)
         x = self.b_classifier(x)
         x = x.view(x.size(0), 2, -1)
         x = x[:, 1, :]
-            
+
         return x
 
     def b_forward(self, x):
@@ -359,7 +427,7 @@ class MutiClassifier_(nn.Module):
         return x
 
     def c_forward(self, x):
-        x = self.net(x)   
+        x = self.net(x)
         x2 = self.b_classifier(x)
         x1 = x2.view(x.size(0), 2, -1)
         x1 = x1[:, 1, :]
@@ -375,8 +443,7 @@ def resnet18_fast(progress=True):
         - **progress** (bool): If True, displays a progress bar of the download to stderr
     """
     model = ResNetFast(BasicBlock, [2, 2, 2, 2])
-    state_dict = load_state_dict_from_url(model_urls['resnet18'],
-                                          progress=progress)
+    state_dict = load_state_dict_from_url(ResNet18_Weights.IMAGENET1K_V2.url)
     model.load_state_dict(state_dict, strict=False)
     del model.fc
 
@@ -385,30 +452,28 @@ def resnet18_fast(progress=True):
 
 def resnet50_fast(progress=True):
     model = ResNetFast(Bottleneck, [3, 4, 6, 3])
-    state_dict = load_state_dict_from_url(model_urls['resnet50'],
-                                          progress=progress)
+    state_dict = load_state_dict_from_url(ResNet50_Weights.IMAGENET1K_V2.url)
     model.load_state_dict(state_dict, strict=False)
     del model.fc
 
     return model
-    
+
 
 def gfnet_fast(model_path, progress=True):
     model = GFNetPyramid(
-        img_size=224, 
-        patch_size=4, embed_dim=[64, 128, 256, 512], depth=[3, 3, 10, 3],
+        img_size=224,
+        patch_size=4,
+        embed_dim=[64, 128, 256, 512],
+        depth=[3, 3, 10, 3],
         mlp_ratio=[4, 4, 4, 4],
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), drop_path_rate=0.1,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6),
+        drop_path_rate=0.1,
     )
 
     replace_layer(model)
 
     state_dict = torch.load(model_path)
-    model.load_state_dict(state_dict['model'], strict=False)
+    model.load_state_dict(state_dict["model"], strict=False)
     del model.head
 
     return model
-
-    
-
-

@@ -3,7 +3,9 @@ import inspect
 
 
 def load_fast_weights(net, fast_parameters):
-    for weight, fast in zip(net.parameters(), fast_parameters or [None] * len(list(net.parameters()))):
+    for weight, fast in zip(
+        net.parameters(), fast_parameters or [None] * len(list(net.parameters()))
+    ):
         weight.fast = fast
 
 
@@ -63,14 +65,12 @@ update_methods = {
 def update_fast_weights(method_name, **kwargs):
     if method_name not in update_methods:
         raise ValueError(f"Unknown method: {method_name}")
-    
+
     method = update_methods[method_name]
-    
+
     sig = inspect.signature(method)
-    filtered_kwargs = {
-        k: v for k, v in kwargs.items() if k in sig.parameters
-    }
-    
+    filtered_kwargs = {k: v for k, v in kwargs.items() if k in sig.parameters}
+
     return method(**filtered_kwargs)
 
 
@@ -103,12 +103,10 @@ accumulate_methods = {
 def accumulate_meta_grads(method_name, **kwargs):
     if method_name not in accumulate_methods:
         raise ValueError(f"Unknown method: {method_name}")
-    
+
     method = accumulate_methods[method_name]
-    
+
     sig = inspect.signature(method)
-    filtered_kwargs = {
-        k: v for k, v in kwargs.items() if k in sig.parameters
-    }
-    
+    filtered_kwargs = {k: v for k, v in kwargs.items() if k in sig.parameters}
+
     return method(**filtered_kwargs)
