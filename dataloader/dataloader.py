@@ -1,7 +1,7 @@
 from torchvision import transforms
 from torch.utils.data import DataLoader, ConcatDataset, random_split
 from dataloader.dataset import SingleClassData, MultiClassData, MultiDomainData
-from util.iterator import ConnectedDataIterator
+from util.iterator import *
 
 
 def get_transform(instr, small_img=False, color_jitter=True, random_grayscale=True):
@@ -12,14 +12,10 @@ def get_transform(instr, small_img=False, color_jitter=True, random_grayscale=Tr
         else ([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
     )
 
-    train_transforms = (
-        [
-            transforms.RandomResizedCrop(size, scale=(0.7, 1.0)),
-            transforms.RandomHorizontalFlip(0.5),
+    if small_img == False:
+        train_transforms = [
+            transforms.RandomResizedCrop((224, 224), (0.7, 1.0))
         ]  # 0.7 for DomainBed, otherwise 0.8
-        if not small_img
-        else [transforms.Resize(size)]
-    )
 
     if color_jitter:
         train_transforms.append(

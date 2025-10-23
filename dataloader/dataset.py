@@ -2,9 +2,9 @@ import os
 import os.path
 from torch.utils.data import Dataset
 from torchvision.datasets.folder import make_dataset, default_loader
-# from PIL import ImageFile
+from PIL import ImageFile
 
-# ImageFile.LOAD_TRUNCATED_IMAGES = True
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
 IMG_EXTENSIONS = (".jpg", ".jpeg", ".png", ".ppm", ".bmp", ".pgm", ".tif", ".tiff", ".webp")
@@ -42,7 +42,7 @@ class SingleClassData(Dataset):
         path = os.path.join(self.root_dir, self.domain_name)
 
         if not os.path.isdir(path):
-            raise ValueError('Domain "{}" does not exit. path: {}'.format(self.domain_name, path))
+            raise ValueError('Domain "{}" does not exit.'.format(self.domain_name))
 
         self.samples = make_dataset(path, class_to_idx, IMG_EXTENSIONS)
         self.length = len(self.samples)
@@ -92,7 +92,7 @@ class MultiClassData(Dataset):
         self.load_dataset()
 
     def load_dataset(self):
-        if not self.get_classes_label:
+        if self.get_classes_label == False:
             class_to_idx = {self.classes[i]: -1 for i in range(len(self.classes))}
         elif self.class_to_idx is None:
             class_to_idx = {self.classes[i]: i for i in range(len(self.classes))}

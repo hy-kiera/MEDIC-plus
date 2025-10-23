@@ -1,6 +1,7 @@
 # config.py
 import argparse
 import os
+import torch
 
 
 def get_args():
@@ -9,7 +10,7 @@ def get_args():
     parser.add_argument(
         "--dataset",
         default="PACS",
-        choices=["PACS", "VLCS", "OfficeHome", "TerraIncognita", "DomainNet"],
+        choices=["PACS", "OfficeHome", "VLCS", "TerraIncognita", "DomainNet"],
     )
     parser.add_argument("--source-domain", nargs="+", default=["photo", "cartoon", "art_painting"])
     parser.add_argument("--target-domain", nargs="+", default=["sketch"])
@@ -28,7 +29,7 @@ def get_args():
     parser.add_argument("--task-c", type=int, default=3)
     parser.add_argument("--task-per-step", nargs="+", type=int, default=[3, 3, 3])
     parser.add_argument(
-        "--weight-per-step", nargs="+", type=float, default=[1 / 2, 1 / 3, 1 / 6], help="arith only"
+        "--weight-per-step", nargs="+", type=float, default=[1.5, 1, 0.5], help="arith only"
     )
     parser.add_argument("--selection-mode", default="random")  # random, hard
 
@@ -47,7 +48,7 @@ def get_args():
     parser.add_argument("--share-param", action="store_true")
 
     parser.add_argument("--save-dir", default="./log/wxr/MEDIC-plus/save")
-    parser.add_argument("--save-name", default="reproduce")
+    parser.add_argument("--save-name", default="demo")
     parser.add_argument("--save-best-test", action="store_true")
     parser.add_argument("--save-later", action="store_true")
 
@@ -58,14 +59,6 @@ def get_args():
 
 args = get_args()
 
-# It can be used to replace the following code, but the editor may take it as an error.
-# locals().update(vars(args))
-
-# It can be replaced by the preceding code.
-dataset = args.dataset
-source_domain = sorted(args.source_domain)
-target_domain = sorted(args.target_domain)
-# known_classes = sorted(args.known_classes)
 if args.dataset == "PACS":
     known_classes = args.known_classes = [
         "dog",
@@ -77,42 +70,55 @@ if args.dataset == "PACS":
         "person",
     ]
 elif args.dataset == "OfficeHome":
-    known_classes = args.known_classes = list(
-        os.listdir("/workspaces/MEDIC-plus/data_list/OfficeHome_list/train/Art")
-    )
+    path = "/workspaces/MEDIC-plus/data_list/OfficeHome_list/train/Art"
+    entries = os.listdir(path)
+    known_classes = args.known_classes = [
+        entry for entry in entries if os.path.isdir(os.path.join(path, entry))
+    ]
 elif args.dataset == "VLCS":
     known_classes = args.known_classes = ["bird", "car", "chair", "dog", "person"]
 elif args.dataset == "DomainNet":
-    known_classes = args.known_classes = list(
-        os.listdir("/workspaces/MEDIC-plus/data_list/DomainNet_list/train/clipart")
-    )
+    path = "/workspaces/MEDIC-plus/data_list/DomainNet_list/train/clipart"
+    entries = os.listdir(path)
+    known_classes = args.known_classes = [
+        entry for entry in entries if os.path.isdir(os.path.join(path, entry))
+    ]
 elif args.dataset == "TerraIncognita":
-    known_classes = args.known_classes = list(
-        os.listdir("/workspaces/MEDIC-plus/dataset_raw/TerraIncognita/location_38")
-    )
+    path = "/workspaces/MEDIC-plus/data_list/TerraIncognita_list/train/location_38"
+    entries = os.listdir(path)
+    known_classes = args.known_classes = [
+        entry for entry in entries if os.path.isdir(os.path.join(path, entry))
+    ]
 
+
+# It can be used to replace the following code, but the editor may take it as an error.
+# locals().update(vars(args))
+
+# It can be replaced by the preceding code.
+dataset = args.dataset
+source_domain = sorted(args.source_domain)
+target_domain = sorted(args.target_domain)
+known_classes = sorted(args.known_classes)
 unknown_classes = sorted(args.unknown_classes)
 random_split = args.random_split
 gpu = args.gpu
-batch_size = args.batch_size = 18 if args.dataset == "DomainNet" else args.batch_size
+batch_size = args.batch_size
 algorithm = args.algorithm
 task_d = args.task_d
 task_c = args.task_c
 task_per_step = args.task_per_step
-weight_per_step = (
-    [1 / 3, 4 / 15, 1 / 5, 2 / 15, 1 / 15] if args.dataset == "DomainNet" else args.weight_per_step
-)
+weight_per_step = args.weight_per_step
 selection_mode = args.selection_mode
 net_name = args.net_name
 optimize_method = args.optimize_method
 schedule_method = args.schedule_method
-num_epoch = args.num_epoch = 15000 if args.dataset == "DomainNet" else args.num_epoch
+num_epoch = args.num_epoch
 eval_step = args.eval_step
 lr = args.lr
 meta_lr = args.meta_lr
 nesterov = args.nesterov
 without_cls = args.without_cls
-without_bcls = args.without_bcls = True
+without_bcls = args.without_bcls
 share_param = args.share_param
 save_dir = args.save_dir = os.path.join(
     args.save_dir, args.algorithm, args.dataset, args.target_domain[0]
@@ -123,7 +129,6 @@ save_best_test = args.save_best_test
 num_epoch_before = args.num_epoch_before
 crossval = True
 
-# DomainBed
 if dataset == "PACS":
     train_dir = "/workspaces/MEDIC-plus/data_list/PACS_list/train"
     val_dir = "/workspaces/MEDIC-plus/data_list/PACS_list/crossval"
