@@ -42,7 +42,8 @@ if __name__ == "__main__":
     num_group = 10 if num_classes >= 10 else num_classes
 
     if dataset == "TerraIncognita" and len(unknown_classes) == 0:
-        num_group = 5
+        # num_group = 5
+        num_group = 4
     elif dataset == "DomainNet" and len(unknown_classes) == 0:
         num_group = 20
 

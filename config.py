@@ -24,7 +24,7 @@ def get_args():
     parser.add_argument("--random-split", action="store_true")
     parser.add_argument("--gpu", default="0")
     parser.add_argument("--batch-size", type=int, default=12)
-    parser.add_argument("--algorithm", default="medic")
+    parser.add_argument("--algorithm", default="medic", choices=["arith", "medic"])
     parser.add_argument("--task-d", type=int, default=3)
     parser.add_argument("--task-c", type=int, default=3)
     parser.add_argument("--task-per-step", nargs="+", type=int, default=[3, 3, 3])
@@ -89,6 +89,16 @@ elif args.dataset == "TerraIncognita":
     known_classes = args.known_classes = [
         entry for entry in entries if os.path.isdir(os.path.join(path, entry))
     ]
+    known_classes = args.known_classes = [
+        "bobcat",
+        "coyote",
+        "dog",
+        "empty",
+        "opossum",
+        "rabbit",
+        "raccoon",
+        "squirrel",
+    ]
 
 
 # It can be used to replace the following code, but the editor may take it as an error.
@@ -102,7 +112,7 @@ known_classes = sorted(args.known_classes)
 unknown_classes = sorted(args.unknown_classes)
 random_split = args.random_split
 gpu = args.gpu
-batch_size = args.batch_size
+batch_size = 18 if args.dataset == "DomainNet" else args.batch_size
 algorithm = args.algorithm
 task_d = args.task_d
 task_c = args.task_c
@@ -112,7 +122,7 @@ selection_mode = args.selection_mode
 net_name = args.net_name
 optimize_method = args.optimize_method
 schedule_method = args.schedule_method
-num_epoch = args.num_epoch
+num_epoch = 15000 if args.dataset == "DomainNet" else args.num_epoch
 eval_step = args.eval_step
 lr = args.lr
 meta_lr = args.meta_lr
