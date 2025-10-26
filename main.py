@@ -266,6 +266,15 @@ if __name__ == "__main__":
                         eta=weight_per_step[step_index],
                     )
 
+                elif algorithm == "noise":
+                    accumulate_meta_grads(
+                        "noise",
+                        net=net,
+                        grad=grad,
+                        meta_lr=meta_lr,
+                        eta=weight_per_step[step_index],
+                    )
+
                 input_sum = []
                 label_sum = []
                 step_index += 1
@@ -273,7 +282,7 @@ if __name__ == "__main__":
         if algorithm == "medic":
             accumulate_meta_grads("reptile", net=net, meta_lr=meta_lr)
 
-        elif algorithm == "arith":
+        elif algorithm == "arith" or algorithm == "noise":
             pass
 
         # update with original optimizers

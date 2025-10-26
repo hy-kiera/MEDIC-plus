@@ -24,7 +24,7 @@ def get_args():
     parser.add_argument("--random-split", action="store_true")
     parser.add_argument("--gpu", default="0")
     parser.add_argument("--batch-size", type=int, default=12)
-    parser.add_argument("--algorithm", default="medic", choices=["arith", "medic"])
+    parser.add_argument("--algorithm", default="medic", choices=["arith", "medic", "noise"])
     parser.add_argument("--task-d", type=int, default=3)
     parser.add_argument("--task-c", type=int, default=3)
     parser.add_argument("--task-per-step", nargs="+", type=int, default=[3, 3, 3])

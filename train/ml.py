@@ -94,9 +94,20 @@ def accumulate_meta_grads_arith(net, grad, meta_lr, eta):
                 weight.grad += g * scale
 
 
+def accumulate_meta_grads_noise(net, grad, meta_lr, eta):
+    scale = eta / meta_lr
+    for weight, g in zip(net.parameters(), grad):
+        if g is not None:
+            if weight.grad is None:
+                weight.grad = g * scale + torch.normal(mean=g, std=0.01)
+            else:
+                weight.grad += g * scale + torch.normal(mean=g, std=0.01)
+
+
 accumulate_methods = {
     "reptile": accumulate_meta_grads_reptile,
     "arith": accumulate_meta_grads_arith,
+    "noise": accumulate_meta_grads_noise,
 }
 
 
