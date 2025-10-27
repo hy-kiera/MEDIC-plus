@@ -104,10 +104,199 @@ def accumulate_meta_grads_noise(net, grad, meta_lr, eta):
                 weight.grad += g * scale + torch.randn(g.shape, device="cuda")
 
 
+def _flatten_grad_list(grad_list):
+    buf = []
+    for g in grad_list:
+        if g is not None:
+            buf.append(g.reshape(-1))
+    return torch.cat(buf) if buf else torch.zeros(0, device="cpu")
+
+
+def _normalize_weights(ws, target_sum=1.0, eps=1e-12):
+    if isinstance(ws, torch.Tensor):
+        w = ws.detach()
+        if w.dtype != torch.float32:
+            w = w.to(dtype=torch.float32)
+    else:
+        if len(ws) == 0:
+            return torch.empty(0, dtype=torch.float32)
+
+        if isinstance(ws[0], torch.Tensor):
+            device = ws[0].device
+            w = torch.stack([x.detach().to(device=device, dtype=torch.float32) for x in ws], dim=0)
+        else:
+            w = torch.tensor(ws, dtype=torch.float32)
+
+    s = w.sum().clamp_min(eps)
+    return (w / s) * target_sum
+
+
+class DomainBayesWeighter:
+    def __init__(self, num_domains, ema=0.9, init_var=1.0, device="cpu"):
+        self.ema = ema
+        self.mean = torch.zeros(num_domains, dtype=torch.float32, device=device)
+        self.var = torch.full((num_domains,), float(init_var), dtype=torch.float32, device=device)
+        self.num_domains = num_domains
+        self.log_domain_scale = None
+
+    def attach_learnable_scale(self, device="cpu", init_log=0.0):
+        self.log_domain_scale = torch.nn.Parameter(
+            torch.full((self.num_domains,), float(init_log), dtype=torch.float32, device=device)
+        )
+        return self.log_domain_scale
+
+    def update_and_get_tau_per_step(self, grads_history, step_domains):
+        flat = [_flatten_grad_list(g) for g in grads_history]
+        device = flat[0].device if flat and flat[0].numel() else "cpu"
+
+        norms = torch.stack(
+            [f.norm() if f.numel() > 0 else torch.tensor(0.0, device=device) for f in flat]
+        )
+        n_steps = len(step_domains)
+
+        with torch.no_grad():
+            for s in range(n_steps):
+                ds = step_domains[s]
+                if len(ds) == 0:
+                    continue
+                v = norms[s]
+                idx = torch.tensor(ds, dtype=torch.long, device=device)
+
+                # Welford-EMA
+                delta = v - self.mean.index_select(0, idx)
+                new_mean = self.mean.index_select(0, idx) + (1 - self.ema) * delta
+                new_var = self.var.index_select(0, idx) * self.ema + (1 - self.ema) * delta * (
+                    v - new_mean
+                )
+
+                self.mean.index_copy_(0, idx, new_mean)
+                self.var.index_copy_(0, idx, new_var.clamp_min(1e-12))
+
+        tau_d = 1.0 / self.var.clamp_min(1e-12)
+
+        if self.log_domain_scale is not None:
+            tau_d = tau_d * torch.exp(self.log_domain_scale)
+
+        tau_step = []
+        for ds in step_domains:
+            if len(ds) == 0:
+                tau_step.append(torch.tensor(1.0, device=device))
+            else:
+                tau_step.append(tau_d[torch.tensor(ds, dtype=torch.long, device=device)].mean())
+        tau_step = torch.stack(tau_step).to(device)
+        return tau_step
+
+
+def _compute_probabilistic_arith_weights(
+    grads_history,
+    beta=0.5,
+    _weight_noise_state=None,
+    target_sum=1.0,
+    bayes_weighter=None,
+    device=None,
+    step_domains=None,
+):
+    n = len(grads_history)
+    if n == 0:
+        return torch.ones(0, device=device)
+
+    base = torch.arange(n, 0, -1, dtype=torch.float32, device=device)
+    w_base = base / (base.sum().clamp_min(1e-12)) * target_sum
+
+    tau = bayes_weighter.update_and_get_tau_per_step(grads_history, step_domains)
+    w = w_base * (tau.clamp_min(1e-12) ** beta)
+
+    return _normalize_weights(w, target_sum=target_sum).to(device)
+
+
+def accumulate_meta_grads_arith_prob(
+    net,
+    grads_history,
+    meta_lr,
+    scaled_factor=3.0,
+    bayes_ema=0.9,
+    beta=0.5,
+    _bayes_state=dict(),
+    step_domains=None,
+    domain_count=None,
+):
+    if not grads_history:
+        return
+
+    device = next(net.parameters()).device
+    target_sum = 1.0 * scaled_factor
+
+    if "bw" not in _bayes_state:
+        _bayes_state["bw"] = DomainBayesWeighter(domain_count, ema=bayes_ema, device=device)
+    bw = _bayes_state["bw"]
+
+    w = _compute_probabilistic_arith_weights(
+        grads_history,
+        beta=beta,
+        target_sum=target_sum,
+        bayes_weighter=bw,
+        step_domains=step_domains,
+        device=device,
+    )
+
+    for step_idx, grad in enumerate(grads_history):
+        scale = w[step_idx] / meta_lr
+        for weight, g in zip(net.parameters(), grad):
+            if g is None:
+                continue
+            if weight.grad is None:
+                weight.grad = g * scale
+            else:
+                weight.grad += g * scale
+
+
+def accumulate_meta_grads_ours(
+    net,
+    grads_history,
+    meta_lr,
+    scaled_factor=3.0,
+    bayes_ema=0.9,
+    beta=0.5,
+    _bayes_state=dict(),
+    step_domains=None,
+    domain_count=None,
+):
+    if not grads_history:
+        return
+
+    device = next(net.parameters()).device
+    target_sum = 1.0 * scaled_factor
+
+    if "bw" not in _bayes_state:
+        _bayes_state["bw"] = DomainBayesWeighter(domain_count, ema=bayes_ema, device=device)
+    bw = _bayes_state["bw"]
+
+    w = _compute_probabilistic_arith_weights(
+        grads_history,
+        beta=beta,
+        target_sum=target_sum,
+        bayes_weighter=bw,
+        step_domains=step_domains,
+        device=device,
+    )
+
+    for step_idx, grad in enumerate(grads_history):
+        scale = w[step_idx] / meta_lr
+        for weight, g in zip(net.parameters(), grad):
+            if g is None:
+                continue
+            if weight.grad is None:
+                weight.grad = g * scale + torch.randn(g.shape, device="cuda")
+            else:
+                weight.grad += g * scale + torch.randn(g.shape, device="cuda")
+
+
 accumulate_methods = {
     "reptile": accumulate_meta_grads_reptile,
     "arith": accumulate_meta_grads_arith,
     "noise": accumulate_meta_grads_noise,
+    "arith_prob": accumulate_meta_grads_arith_prob,
+    "ours": accumulate_meta_grads_ours,
 }
 
 

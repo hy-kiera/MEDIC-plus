@@ -20,7 +20,6 @@ from util.iterator import *
 from train.ml import *
 import types
 
-
 if __name__ == "__main__":
     logger = Logger(log_path)
 
@@ -43,7 +42,7 @@ if __name__ == "__main__":
 
     if dataset == "TerraIncognita" and len(unknown_classes) == 0:
         # num_group = 5
-        num_group = 4
+        num_group = 4  # because two classes are excluded
     elif dataset == "DomainNet" and len(unknown_classes) == 0:
         num_group = 20
 
@@ -66,6 +65,13 @@ if __name__ == "__main__":
         NumGroups=num_group,
         BatchSize=batch_size,
         Algorithm=algorithm,
+        # ==== Note: Add
+        DomainShuffle=domain_shuffle,
+        BayesEMA=bayes_ema,
+        BayesBeta=beta,
+        LearnableDomainScale=learnable_domain_scale,
+        LearnableDomainScaleLR=domain_scale_lr,
+        # =====
         TaskDomain=task_d,
         TaskClass=task_c,
         TasksPerStep=task_per_step,
@@ -210,11 +216,15 @@ if __name__ == "__main__":
         domain_specific_loader=domain_specific_loader,
         device=device,
         mode=selection_mode,
+        shuffle=domain_shuffle,
     )
 
     fast_parameters = list(net.parameters())
     load_fast_weights(net, None)
     net.zero_grad()
+
+    # Note: add
+    grads_history = []
 
     for epoch in range(num_epoch_before, num_epoch):
         net.train()
@@ -222,6 +232,7 @@ if __name__ == "__main__":
         step_index = 0
         input_sum = []
         label_sum = []
+        step_domains = []
 
         for domain_index, group_index in task_pool:
             for i in domain_index:
@@ -250,11 +261,13 @@ if __name__ == "__main__":
                     ovaloss=ovaloss,
                     weight=task_per_step[step_index],
                 )
+                grads_history.append(grad)
+                step_domains.append(list(domain_index))
                 fast_parameters = update_fast_weights(
                     "reptile", net=net, grad=grad, meta_lr=meta_lr
                 )
 
-                if algorithm == "medic":
+                if algorithm in ["medic", "arith_prob", "ours"]:
                     pass
 
                 elif algorithm == "arith":
@@ -282,7 +295,32 @@ if __name__ == "__main__":
         if algorithm == "medic":
             accumulate_meta_grads("reptile", net=net, meta_lr=meta_lr)
 
-        elif algorithm == "arith" or algorithm == "noise":
+        # Note: add 'arith_prob'
+        elif algorithm == "arith_prob":
+            accumulate_meta_grads(
+                "arith_prob",
+                net=net,
+                grads_history=grads_history,
+                meta_lr=meta_lr,
+                bayes_ema=bayes_ema,
+                beta=beta,
+                step_domains=step_domains,
+                domain_count=num_domain,
+            )
+
+        elif algorithm == "ours":
+            accumulate_meta_grads(
+                "ours",
+                net=net,
+                grads_history=grads_history,
+                meta_lr=meta_lr,
+                bayes_ema=bayes_ema,
+                beta=beta,
+                step_domains=step_domains,
+                domain_count=num_domain,
+            )
+
+        elif algorithm in ["arith", "noise"]:
             pass
 
         # update with original optimizers
@@ -291,6 +329,8 @@ if __name__ == "__main__":
         fast_parameters = list(net.parameters())
         load_fast_weights(net, None)
         net.zero_grad()
+
+        grads_history.clear()
 
         task_pool = get_task_pool(
             task_d=task_d,
@@ -302,6 +342,7 @@ if __name__ == "__main__":
             domain_specific_loader=domain_specific_loader,
             device=device,
             mode=selection_mode,
+            shuffle=domain_shuffle,
         )
 
         if (epoch + 1) % eval_step == 0:

@@ -21,10 +21,19 @@ def get_args():
     )
     parser.add_argument("--unknown-classes", nargs="+", default=[])
 
+    # ============= Note: Custum arg.
+    parser.add_argument("--domain-shuffle", default="true")  # true, false
+    parser.add_argument("--bayes-ema", type=float, default=0.95)  # EMA coeff.
+    parser.add_argument("--beta", type=float, default=0.4)
+    parser.add_argument("--domain-scale-lr", type=float, default=None)
+    # =============
+
     parser.add_argument("--random-split", action="store_true")
     parser.add_argument("--gpu", default="0")
     parser.add_argument("--batch-size", type=int, default=12)
-    parser.add_argument("--algorithm", default="medic", choices=["arith", "medic", "noise"])
+    parser.add_argument(
+        "--algorithm", default="ours", choices=["arith", "medic", "noise", "arith_prob", "ours"]
+    )
     parser.add_argument("--task-d", type=int, default=3)
     parser.add_argument("--task-c", type=int, default=3)
     parser.add_argument("--task-per-step", nargs="+", type=int, default=[3, 3, 3])
@@ -70,7 +79,7 @@ if args.dataset == "PACS":
         "person",
     ]
 elif args.dataset == "OfficeHome":
-    path = "/workspaces/MEDIC-plus/data_list/OfficeHome_list/train/Art"
+    path = "./data_list/OfficeHome_list/train/Art"
     entries = os.listdir(path)
     known_classes = args.known_classes = [
         entry for entry in entries if os.path.isdir(os.path.join(path, entry))
@@ -78,18 +87,18 @@ elif args.dataset == "OfficeHome":
 elif args.dataset == "VLCS":
     known_classes = args.known_classes = ["bird", "car", "chair", "dog", "person"]
 elif args.dataset == "DomainNet":
-    path = "/workspaces/MEDIC-plus/data_list/DomainNet_list/train/clipart"
+    path = "./data_list/DomainNet_list/train/clipart"
     entries = os.listdir(path)
     known_classes = args.known_classes = [
         entry for entry in entries if os.path.isdir(os.path.join(path, entry))
     ]
 elif args.dataset == "TerraIncognita":
-    path = "/workspaces/MEDIC-plus/data_list/TerraIncognita_list/train/location_38"
+    path = "./data_list/TerraIncognita_list/train/location_38"
     entries = os.listdir(path)
     known_classes = args.known_classes = [
         entry for entry in entries if os.path.isdir(os.path.join(path, entry))
     ]
-    known_classes = args.known_classes = [
+    known_classes = args.known_classes = [  # NOTE: exclude two classes that have few images
         "bobcat",
         "coyote",
         "dog",
@@ -139,48 +148,56 @@ save_best_test = args.save_best_test
 num_epoch_before = args.num_epoch_before
 crossval = True
 
+# ============= Note: for arith_prob
+domain_shuffle = True if args.domain_shuffle.lower() == "true" else False
+bayes_ema = args.bayes_ema
+beta = args.beta
+learnable_domain_scale = args.learnable_domain_scale
+domain_scale_lr = args.domain_scale_lr if args.domain_scale_lr is not None else (lr * 0.5)
+# =============
+
 if dataset == "PACS":
-    train_dir = "/workspaces/MEDIC-plus/data_list/PACS_list/train"
-    val_dir = "/workspaces/MEDIC-plus/data_list/PACS_list/crossval"
+    train_dir = "./data_list/PACS_list/train"
+    val_dir = "./data_list/PACS_list/crossval"
     test_dir = [
-        "/workspaces/MEDIC-plus/data_list/PACS_list/train",
-        "/workspaces/MEDIC-plus/data_list/PACS_list/crossval",
+        "./data_list/PACS_list/train",
+        "./data_list/PACS_list/crossval",
     ]
     sub_batch_size = batch_size // 2
     small_img = False
 elif dataset == "OfficeHome":
-    train_dir = "/workspaces/MEDIC-plus/data_list/OfficeHome_list/train"
-    val_dir = "/workspaces/MEDIC-plus/data_list/OfficeHome_list/crossval"
+    train_dir = "./data_list/OfficeHome_list/train"
+    val_dir = "./data_list/OfficeHome_list/crossval"
     test_dir = [
-        "/workspaces/MEDIC-plus/data_list/OfficeHome_list/train",
-        "/workspaces/MEDIC-plus/data_list/OfficeHome_list/crossval",
+        "./data_list/OfficeHome_list/train",
+        "./data_list/OfficeHome_list/crossval",
     ]
     sub_batch_size = batch_size // 2
     small_img = False
 elif dataset == "VLCS":
-    train_dir = "/workspaces/MEDIC-plus/data_list/VLCS_list/train"
-    val_dir = "/workspaces/MEDIC-plus/data_list/VLCS_list/crossval"
+    train_dir = "./data_list/VLCS_list/train"
+    val_dir = "./data_list/VLCS_list/crossval"
     test_dir = [
-        "/workspaces/MEDIC-plus/data_list/VLCS_list/train",
-        "/workspaces/MEDIC-plus/data_list/VLCS_list/crossval",
+        "./data_list/VLCS_list/train",
+        "./data_list/VLCS_list/crossval",
     ]
     sub_batch_size = batch_size
     small_img = False
 elif dataset == "TerraIncognita":
-    train_dir = "/workspaces/MEDIC-plus/data_list/TerraIncognita_list/train"
-    val_dir = "/workspaces/MEDIC-plus/data_list/TerraIncognita_list/crossval"
+    train_dir = "./data_list/TerraIncognita_list/train"
+    val_dir = "./data_list/TerraIncognita_list/crossval"
     test_dir = [
-        "/workspaces/MEDIC-plus/data_list/TerraIncognita_list/train",
-        "/workspaces/MEDIC-plus/data_list/TerraIncognita_list/crossval",
+        "./data_list/TerraIncognita_list/train",
+        "./data_list/TerraIncognita_list/crossval",
     ]
     sub_batch_size = batch_size
     small_img = False
 elif dataset == "DomainNet":
-    train_dir = "/workspaces/MEDIC-plus/data_list/DomainNet_list/train"
-    val_dir = "/workspaces/MEDIC-plus/data_list/DomainNet_list/crossval"
+    train_dir = "./data_list/DomainNet_list/train"
+    val_dir = "./data_list/DomainNet_list/crossval"
     test_dir = [
-        "/workspaces/MEDIC-plus/data_list/DomainNet_list/train",
-        "/workspaces/MEDIC-plus/data_list/DomainNet_list/crossval",
+        "./data_list/DomainNet_list/train",
+        "./data_list/DomainNet_list/crossval",
     ]
     sub_batch_size = batch_size // 2
     small_img = False
