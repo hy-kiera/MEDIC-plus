@@ -99,9 +99,9 @@ def accumulate_meta_grads_noise(net, grad, meta_lr, eta):
     for weight, g in zip(net.parameters(), grad):
         if g is not None:
             if weight.grad is None:
-                weight.grad = g * scale + torch.normal(mean=g, std=0.01)
+                weight.grad = g * scale + torch.randn(g.shape, device="cuda")
             else:
-                weight.grad += g * scale + torch.normal(mean=g, std=0.01)
+                weight.grad += g * scale + torch.randn(g.shape, device="cuda")
 
 
 accumulate_methods = {
